@@ -1,5 +1,7 @@
 
-Published at <https://people.eecs.berkeley.edu/~rcs/research/interactive_latency.html>
+Published at <http://orsenthil.github.io/interactive_latencies/>
+
+Originally published at <https://people.eecs.berkeley.edu/~rcs/research/interactive_latency.html>
 
 The terminal version is available at cheat.sh/latencies
 ```
