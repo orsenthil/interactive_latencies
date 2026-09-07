@@ -242,6 +242,21 @@
         return 150000000; // ns
     }
 
+    // TCP payload transfer time, by number of round trips:
+    // [source: https://blog.std.in/http-response-sizes-and-tcp/]
+    // MSS=1300 bytes, initial cwnd=10 segments, cwnd doubles each RTT
+    // -> max bytes deliverable in n RTTs = 13000 * (2^n - 1)
+    var payloadBytes = 13000;
+    function getRTTCount(bytes) {
+        if (bytes <= 0) {
+          bytes = 1;
+        }
+        return Math.max(1, Math.ceil(Math.log(bytes / 13000 + 1) / Math.LN2));
+    }
+    function getTcpTransferTime(bytes, rttMs) {
+        return getRTTCount(bytes) * rttMs; // ms
+    }
+
     // Display functions:
     function drawBoxes(n, div, color) {
         var cw = 100;
@@ -291,6 +306,7 @@
     var blue = "stroke:#FFFFFF; fill: #0000FF";
     var green = "stroke:#FFFFFF; fill: #00CC00";
     var red = "stroke:#FFFFFF; fill: #FF0000";
+    var orange = "stroke:#FFFFFF; fill: #FF8800";
 
     function addCommas(nStr) {
       // First, make fixed length
@@ -309,6 +325,21 @@
         x1 = x1.replace(rgx, '$1' + ',' + '$2');
       }
       return x1 + x2;
+    }
+
+    // 1 box = 50ms, so the grids stay a readable size across the RTT range
+    function fillTcpMetric(div, label, ms, color) {
+      document.getElementById(div).innerHTML = "";
+      drawBoxes(ms / 50, div, color);
+      var rtts = getRTTCount(payloadBytes);
+      document.getElementById(div + "t").innerHTML = label + addCommas(ms) + "ms (" +
+          rtts + " RTT" + (rtts > 1 ? "s" : "") + ")";
+    }
+
+    function renderTcp() {
+      fillTcpMetric("usaRtt", "USA: ", getTcpTransferTime(payloadBytes, 150), blue);
+      fillTcpMetric("indiaRtt", "India: ", getTcpTransferTime(payloadBytes, 1200), red);
+      fillTcpMetric("brazilRtt", "Brazil: ", getTcpTransferTime(payloadBytes, 600), green);
     }
 
     function Metric(ns, boxType, displayString, div, optionalSuffix) {
@@ -423,6 +454,19 @@
             }
         });
         $( "#amount" ).val( $( "#slider" ).slider( "value" ) );
+
+        $( "#payloadSlider" ).slider({
+            value: payloadBytes,
+            min: 0,
+            max: 195000,
+            step: 1000,
+            slide: function( event, ui ) {
+                $( "#payloadAmount" ).val( addCommas(ui.value) + " bytes" );
+                payloadBytes = ui.value;
+                renderTcp();
+            }
+        });
+        $( "#payloadAmount" ).val( addCommas($( "#payloadSlider" ).slider( "value" )) + " bytes" );
     });
     </script>
 
@@ -637,6 +681,38 @@
               </tr>
             </tbody>
           </table>
+
+          <p>Drag the slider to change the payload size and watch the transfer time change per country:</p>
+          <div class="row-fluid">
+            <div class="span7 offset5">
+                <input type="text" id="payloadAmount" style="border: 0; font-weight: bold;" />
+            </div>
+          </div>
+          <div id="payloadSlider">
+            <div class="row-fluid">
+              <div class="span12"></div>
+            </div>
+          </div>
+          <div class="row-fluid">
+            <div class="span4">
+              <div class="row-fluid">
+                  <div class="span4" id="usaRtt"></div>
+                  <div class="span8" id="usaRttt"></div>
+              </div>
+            </div>
+            <div class="span4">
+              <div class="row-fluid">
+                  <div class="span4" id="indiaRtt"></div>
+                  <div class="span8" id="indiaRttt"></div>
+              </div>
+            </div>
+            <div class="span4">
+              <div class="row-fluid">
+                  <div class="span4" id="brazilRtt"></div>
+                  <div class="span8" id="brazilRttt"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div><!--/.fluid-container-->
@@ -651,6 +727,7 @@
           }
         }
         render();
+        renderTcp();
     </script>
   </body>
 </html>
