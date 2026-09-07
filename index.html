@@ -589,6 +589,56 @@
           </div>
         </div><!--Fourth Column-->
       </div><!-- row-fluid -->
+
+      <div class="row-fluid">
+        <div class="span12">
+          <hr>
+          <h4>Time Taken for a Payload to Travel over TCP</h4>
+          <p>Here is the amount of time required to transmit various data payloads on typical cell networks around the world, assuming no data loss.</p>
+          <p><strong>RTT (Round Trip Time)</strong> &mdash; the total time taken for a data packet to travel from sender to receiver and back to sender over the network. In short, it's called ping time.</p>
+          <table class="table table-bordered table-condensed" style="width: auto;">
+            <thead>
+              <tr>
+                <th>Payload size</th>
+                <th>RTTs required</th>
+                <th>USA</th>
+                <th>India</th>
+                <th>Brazil</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1 byte &ndash; 13,000 bytes (~13 KB)</td>
+                <td>1 RTT</td>
+                <td>150 ms</td>
+                <td>1,200 ms</td>
+                <td>600 ms</td>
+              </tr>
+              <tr>
+                <td>13,001 &ndash; 39,000 bytes (13 KB &ndash; 39 KB)</td>
+                <td>2 RTT</td>
+                <td>300 ms</td>
+                <td>2,400 ms</td>
+                <td>1,200 ms</td>
+              </tr>
+              <tr>
+                <td>39,001 &ndash; 91,000 bytes (39 KB &ndash; 91 KB)</td>
+                <td>3 RTT</td>
+                <td>450 ms</td>
+                <td>3,600 ms</td>
+                <td>1,800 ms</td>
+              </tr>
+              <tr>
+                <td>91,001 &ndash; 195,000 bytes (91 KB &ndash; 195 KB)</td>
+                <td>4 RTT</td>
+                <td>600 ms</td>
+                <td>4,800 ms</td>
+                <td>2,400 ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div><!--/.fluid-container-->
 
     <!-- Fill in the columns -->
@@ -641,6 +691,8 @@
         <li><a href="http://www.storagenewsletter.com/news/disk/hdd-technology-trends-ibm">"HDD Technology Trends" (IBM)</a> &mdash; disk seek and rotational delay trends</li>
         <li>Google Research, <a href="http://research.google.com/pubs/pub35590.html">publication on wide-area network routing</a> &mdash; rationale for improving WAN round-trip times</li>
         <li>Freescale, <a href="http://cache.freescale.com/files/32bit/doc/app_note/AN2180.pdf">Application Note AN2180</a> &mdash; L1/L2 cache reference latencies</li>
+        <li><a href="https://blog.std.in/http-response-sizes-and-tcp/">"HTTP Response sizes and TCP"</a> &mdash; how TCP's congestion window shapes payload transfer time, with RTT figures for the USA, India, and Brazil</li>
+        <li><a href="https://perma.cc/RW73-36RL">Archived copy (perma.cc)</a> of "HTTP Response sizes and TCP"</li>
       </ol>
     </div>
   </body>
