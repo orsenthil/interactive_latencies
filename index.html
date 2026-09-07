@@ -31,10 +31,37 @@
         width: 99%;
         height: 700px;
       }
+      .github-fork-ribbon {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 1000;
+        overflow: hidden;
+        width: 150px;
+        height: 150px;
+        pointer-events: none;
+      }
+      .github-fork-ribbon a {
+        position: absolute;
+        top: 40px;
+        right: -35px;
+        transform: rotate(45deg);
+        width: 200px;
+        padding: 6px 0;
+        background-color: #1b2537;
+        color: #fff;
+        text-align: center;
+        font: bold 13px "Helvetica Neue", Helvetica, Arial, sans-serif;
+        text-decoration: none;
+        box-shadow: 0 0 6px rgba(0,0,0,0.3);
+        pointer-events: auto;
+      }
     </style>
   </head>
   <body>
-    <a href="https://github.com/colin-scott/interactive_latencies"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://camo.githubusercontent.com/38ef81f8aca64bb9a64448d0d70f1308ef5341ab/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png"></a>
+    <div class="github-fork-ribbon">
+      <a href="https://github.com/orsenthil/interactive_latencies">Fork me on GitHub</a>
+    </div>
 
     <iframe id=preview></iframe>
     <textarea id=code name=code>
