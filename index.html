@@ -153,6 +153,35 @@
     function shift(year) {
         return year - 1982;
     }
+
+    // Piecewise log-linear interpolation between (year, value) anchors.
+    // Several of the original curves below were a single global
+    // exponential fit to one data point, which either undershoots
+    // today's hardware or, extended far enough, runs away to absurd
+    // values (e.g. multi-terabit commodity NICs). Anchoring to a
+    // handful of real hardware generations and interpolating between
+    // them (holding the last segment's growth rate beyond the final
+    // anchor) tracks reality much more closely and is easy to update
+    // as new hardware ships -- just add another anchor point.
+    function interpolateLogLinear(anchors, x) {
+        if (x <= anchors[0][0]) {
+          return anchors[0][1];
+        }
+        var lastIdx = anchors.length - 1;
+        if (x >= anchors[lastIdx][0]) {
+          var prev = anchors[lastIdx - 1];
+          var last = anchors[lastIdx];
+          var rate = Math.log(last[1] / prev[1]) / (last[0] - prev[0]);
+          return last[1] * Math.exp(rate * (x - last[0]));
+        }
+        for (var i = 0; i < lastIdx; i++) {
+          var a = anchors[i], b = anchors[i + 1];
+          if (x >= a[0] && x <= b[0]) {
+            var t = (x - a[0]) / (b[0] - a[0]);
+            return a[1] * Math.pow(b[1] / a[1], t);
+          }
+        }
+    }
     function getPayloadBytes() {
         // 1 MB
         return Math.pow(10, 6);
@@ -166,6 +195,9 @@
         // [source: http://www.kmeme.com/2010/09/clock-speed-wall.html]
         // Before then, doubling every ~2 years
         // [source: www.cs.berkeley.edu/~pattrsn/talks/sigmod98-keynote.ppt]
+        // Left as a flat 3GHz on purpose: 2024-era CPUs still sit in
+        // the same ~3-5GHz band (turbo boost aside) -- the power/
+        // thermal wall this curve models hasn't moved.
         if (year <= 2005) {
           // 3*10^9 = a*b^(2005-1990)
           // b = 2^(1/2)
@@ -186,6 +218,10 @@
         // [source: http://download.micron.com/pdf/presentations/events/winhec_klein.pdf]
         // 15 years ago, it was decreasing 7% / year
         // [source: www.cs.berkeley.edu/~pattrsn/talks/sigmod98-keynote.ppt]
+        // Left as a flat 100ns on purpose: DDR5's higher CAS-latency
+        // cycle counts roughly cancel out its higher clock, so
+        // absolute (ns) DRAM latency in 2024 is still ~80-100ns --
+        // essentially unchanged despite ~25x more bandwidth.
         if (year <= 2000) {
            // b = 0.93
            // 100ns = a*0.93^2000
@@ -198,31 +234,46 @@
         }
         return ms;
     }
-    function getNICTransmissionDelay(payloadBytes) {
-        // NIC bandwidth doubles every 2 years
-        // [source: http://ampcamp.berkeley.edu/wp-content/uploads/2012/06/Ion-stoica-amp-camp-21012-warehouse-scale-computing-intro-final.pdf]
-        // TODO: should really be a step function
-        // 1Gb/s = 125MB/s = 125*10^6 B/s in 2003
-        // 125*10^6 = a*b^x
-        // b = 2^(1/2)
-        // -> a = 125*10^6 / 2^(2003.5)
-        var a = 125 * Math.pow(10,6) / Math.pow(2,shift(2003) * 0.5);
-        var b = Math.pow(2, 1.0/2);
-        var bw = a * Math.pow(b, shift(year));
+    // Commodity/datacenter NIC bandwidth, bits/sec, by Ethernet
+    // generation: 10BASE-T (1990) -> 100BASE-TX (1998) -> Gigabit
+    // (2003) -> 10GbE (2010) -> 25GbE (2016) -> 100GbE (2021) ->
+    // 400GbE (2026, current-gen hyperscale rollout), then a slower
+    // ~4-year doubling beyond that. The original single-exponential
+    // "doubles every 2 years" fit, extended to today, overshoots to
+    // multiple terabits/sec of commodity bandwidth -- anchoring to
+    // the actual Ethernet generations tracks reality much better.
+    var nicBandwidthBpsAnchors = [
+        [1990, 10e6],
+        [1998, 100e6],
+        [2003, 1e9],
+        [2010, 10e9],
+        [2016, 25e9],
+        [2021, 100e9],
+        [2026, 400e9]
+    ];
+    function nicTransmissionNsForYear(payloadBytes, forYear) {
+        var bitsPerSec = interpolateLogLinear(nicBandwidthBpsAnchors, forYear);
+        var bw = bitsPerSec / 8; // bytes/sec
         // B/s * s/ns = B/ns
-        var ns = payloadBytes / (bw / Math.pow(10,9));
-        return ns;
+        return payloadBytes / (bw / Math.pow(10,9));
     }
+    function getNICTransmissionDelay(payloadBytes) {
+        return nicTransmissionNsForYear(payloadBytes, year);
+    }
+    // Dual-channel DRAM bandwidth, bytes/sec, by generation: DDR-266
+    // (2001) -> DDR2-800 (2007) -> DDR3-1600 (2012) -> DDR4-2400
+    // (2017) -> DDR4-3200 (2021) -> DDR5-6000 (2024), then a slower
+    // ~6-year doubling beyond that (DDR6 + CXL memory expansion).
+    var dramBandwidthBpsAnchors = [
+        [2001, 4.0e9],
+        [2007, 12.8e9],
+        [2012, 25.6e9],
+        [2017, 38.4e9],
+        [2021, 51.2e9],
+        [2024, 96.0e9]
+    ];
     function getBusTransmissionDelay(payloadBytes) {
-        // DRAM bandwidth doubles every 3 years
-        // [source: http://ampcamp.berkeley.edu/wp-content/uploads/2012/06/Ion-stoica-amp-camp-21012-warehouse-scale-computing-intro-final.pdf]
-        // 1MB / 250,000 ns = 10^6B / 0.00025 = 4*10^9 B/s in 2001
-        // 4*10^9 = a*b^x
-        // b = 2^(1/3)
-        // -> a = 4*10^9 / 2^(2001.33)
-        var a = 4*Math.pow(10, 9) / Math.pow(2,shift(2001) * 0.33);
-        var b = Math.pow(2,1.0/3);
-        var bw = a * Math.pow(b, shift(year));
+        var bw = interpolateLogLinear(dramBandwidthBpsAnchors, year);
         // B/s * s/ns = B/ns
         var ns = payloadBytes / (bw / Math.pow(10,9));
         return ns;
@@ -238,19 +289,35 @@
            var a = 2 * Math.pow(10,4) / Math.pow(1.0/20, shift(year) * 0.22);
            var b = Math.pow(1.0/20, 1.0/4.5);
            return a * Math.pow(b,shift(year));
-        } else {
-           return 16000;
         }
+        // Modern NVMe controllers (PCIe4/5) kept shaving this down
+        // through the 2010s -- low-queue-depth random reads on
+        // current drives are commonly ~10us at the device level. But
+        // NAND cell sensing + ECC decode is a physical floor flash
+        // alone won't get under (~7us); going lower needs a
+        // different medium entirely, e.g. Optane-class storage-class
+        // memory or CXL-attached memory, both ~sub-microsecond.
+        if (year >= 2024) {
+           return 7000;
+        }
+        var t = (year - 2014) / (2024 - 2014);
+        return 16000 + (7000 - 16000) * t;
     }
+    // SSD sequential bandwidth, bytes/sec, by generation: SATA III
+    // (2012) -> early PCIe3 NVMe (2015) -> mainstream PCIe3 NVMe
+    // (2017) -> PCIe4 NVMe (2020) -> PCIe5 NVMe (2023), then a
+    // slower ~4-year doubling beyond that (PCIe6 NVMe ~2027). The
+    // original curve's 2012 anchor (3GB/s) was already implausible
+    // for the era -- mainstream SSDs were SATA-limited to ~0.5GB/s.
+    var ssdBandwidthBpsAnchors = [
+        [2012, 0.5e9],
+        [2015, 2.5e9],
+        [2017, 3.5e9],
+        [2020, 7.0e9],
+        [2023, 14.0e9]
+    ];
     function getSSDTransmissionDelay(payloadBytes) {
-        // SSD bandwidth doubles every 3 years
-        // [source: http://ampcamp.berkeley.edu/wp-content/uploads/2012/06/Ion-stoica-amp-camp-21012-warehouse-scale-computing-intro-final.pdf]
-        // 3GB/s = a*b^2012
-        // b = 2^(1/3)
-        // -> a = 6*10^9 / 2^(2012.33)
-        var a = 3*Math.pow(10, 9) / Math.pow(2,shift(2012) * 0.33);
-        var b = Math.pow(2, 1.0/3);
-        var bw = a*Math.pow(b, shift(year));
+        var bw = interpolateLogLinear(ssdBandwidthBpsAnchors, year);
         // B/s * s/ns = B/ns
         var ns = payloadBytes / (bw / Math.pow(10,9));
         return ns;
@@ -264,7 +331,12 @@
         var a = Math.pow(10,7) / Math.pow(0.5,shift(2000)*0.1);
         var b = Math.pow(0.5,0.1);
         var ns = a * Math.pow(b, shift(year));
-        return ns;
+        // Mechanical seek+rotational latency has essentially
+        // plateaued since the mid-2010s -- areal density keeps
+        // climbing but spindle RPM and actuator speed haven't, so
+        // this floors out around ~4ms for modern (and future) hard
+        // disks rather than continuing to halve forever.
+        return Math.max(ns, 4000000);
     }
     function getDiskTransmissionDelay(payloadBytes) {
         // Disk bandwidth is increasing very slowly -- doubles every ~5 years
@@ -287,6 +359,11 @@
           var b = Math.pow(2,1.0/5);
           var bw = a * Math.pow(b, shift(year));
         }
+        // Sequential HDD bandwidth has plateaued too -- today's
+        // largest (helium, SMR) drives top out around ~280MB/s, a
+        // limit set by how fast the platter spins past the head, not
+        // by areal density, which keeps climbing independently.
+        bw = Math.min(bw, 280 * Math.pow(10,6));
         // B/s * s/ns = B/ns
         var ns = payloadBytes / (bw / Math.pow(10,9));
         return ns;
@@ -419,14 +496,73 @@
       fillTcpMetric("brazilRtt", "Brazil: ", getTcpTransferTime(payloadBytes, 600), green);
     }
 
+    // For "auto" metrics whose underlying technology has genuinely
+    // crossed an order-of-magnitude boundary over the years (e.g.
+    // network transmission time going from milliseconds in the
+    // 10BASE-T era to nanoseconds on a modern 100/400GbE NIC), pick
+    // the display bucket from the actual magnitude instead of a
+    // fixed unit -- so the box's color/unit visibly changes as you
+    // drag the year slider across that threshold.
+    function unitBucket(ns) {
+        if (ns >= 1e6) return "ms";
+        if (ns >= 1e3) return "10us";
+        return "ns";
+    }
+
+    // Scans forward year-by-year to find where fn(year) first drops
+    // below thresholdNs, for annotating an "auto" metric with the
+    // (approximate) year it crossed a unit boundary.
+    function findCrossingYear(fn, thresholdNs, fromYear, toYear) {
+        for (var y = fromYear; y <= toYear; y++) {
+          if (fn(y) < thresholdNs) {
+            return y;
+          }
+        }
+        return null;
+    }
+
+    // Briefly highlights an "auto" metric's box the moment its unit
+    // actually changes, so crossing the boundary while dragging the
+    // slider is felt, not just read.
+    function flashCrossing(div) {
+        var el = document.getElementById(div);
+        if (!el) return;
+        el.classList.remove("crossed-flash");
+        void el.offsetWidth; // restart the CSS animation
+        el.classList.add("crossed-flash");
+    }
+
+    // One-time computation of the year(s) the network metric's unit
+    // crosses ms->us and us->ns, written into the static caption next
+    // to it. These are properties of the (static) bandwidth curve, not
+    // of the currently selected year, so this only needs to run once.
+    function initCrossingAnnotations() {
+        var el = document.getElementById("networkCrossing");
+        if (!el) return;
+        var payload = getNetworkPayloadBytes();
+        var nsForYear = function(y) { return nicTransmissionNsForYear(payload, y); };
+        var msToUs = findCrossingYear(nsForYear, 1e6, 1990, 2035);
+        var usToNs = findCrossingYear(nsForYear, 1e3, 1990, 2035);
+        var parts = [];
+        if (msToUs !== null) {
+          parts.push("ms → μs in " + msToUs);
+        }
+        if (usToNs !== null) {
+          parts.push("μs → ns in " + usToNs);
+        }
+        el.textContent = parts.length ? ("Crosses " + parts.join(" · ")) : "";
+    }
+
     function Metric(ns, boxType, displayString, div, optionalSuffix) {
         this.ns = ns;
-        if (boxType == "ns") {
+        var bt = boxType === "auto" ? unitBucket(ns) : boxType;
+        this.unit = bt;
+        if (bt == "ns") {
           this.color = black;
           this.boxes = ns;
           this.nsDisplay = addCommas(ns);
           this.alternateUnit = "";
-        } else if (boxType == "100ns") {
+        } else if (bt == "100ns") {
           this.color = blue;
           this.boxes = ns / 100;
           var us = ns / 1000;
@@ -437,7 +573,7 @@
             this.nsDisplay = addCommas(ns);
             this.alternateUnit = "";
           }
-        } else if (boxType == "10us") {
+        } else if (bt == "10us") {
           this.color = green;
           this.boxes = ns / 10000;
           if (displayString != "") {
@@ -453,7 +589,7 @@
             this.nsDisplay = addCommas(Math.round(ns / 1000) * 1000);
             this.alternateUnit = " = 1ms";
           }
-        } else if (boxType == "ms") {
+        } else if (bt == "ms") {
           this.color = red;
           this.boxes = ns * Math.pow(10, -6);
           var ms = ns * Math.pow(10, -6);
@@ -498,7 +634,11 @@
         var snappy = new Metric(6000 * getCycle(), "100ns", "Compress 1KB wth Snappy: ",
                                "snappy");
         var tenMicro = new Metric(100*100, "100ns", "", "tenMicro", ' = ' + singleBox(green));
-        var network = new Metric(getNICTransmissionDelay(getNetworkPayloadBytes()), "10us",
+        // "auto" boxType: this is the one metric on the page whose
+        // real-world unit has actually crossed a boundary (ms -> us
+        // -> ns) as NICs went from 10BASE-T to 400GbE -- see the
+        // crossing-year caption wired up in initCrossingAnnotations().
+        var network = new Metric(getNICTransmissionDelay(getNetworkPayloadBytes()), "auto",
               "Send " + addCommas(getNetworkPayloadBytes()) + " bytes over commodity network: ", "network");
         var ssdRandom = new Metric(getSSDLatency(), "10us", "SSD random read: ", "ssdRandom");
         var mbMem = new Metric(getBusTransmissionDelay(getPayloadBytes()), "10us",
@@ -603,6 +743,19 @@
         font-size: 13px;
         padding-top: 1px;
       }
+      .metric-crossing {
+        font-size: 11px;
+        font-style: italic;
+        color: #888;
+        margin-top: 2px;
+      }
+      @keyframes crossed-flash {
+        0% { box-shadow: 0 0 0 4px rgba(255,193,7,0.9); }
+        100% { box-shadow: 0 0 0 0 rgba(255,193,7,0); }
+      }
+      .crossed-flash {
+        animation: crossed-flash 900ms ease-out;
+      }
 
       /* TCP payload section */
       .table-scroll {
@@ -703,7 +856,10 @@
         <div class="metrics-col">
           <div class="metric-row">
               <div class="metric-box" id="network"></div>
-              <div class="metric-text" id="networkt"></div>
+              <div class="metric-text">
+                <div id="networkt"></div>
+                <div class="metric-crossing" id="networkCrossing"></div>
+              </div>
           </div>
           <div class="metric-row">
               <div class="metric-box" id="ssdRandom"></div>
@@ -813,14 +969,22 @@
 
     <!-- Fill in the columns -->
     <script>
+        var lastNetworkUnit = null;
         function render() {
           var metrics = getMetrics();
           for (var i in metrics) {
             var metric = metrics[i];
             metric.fillDiv();
+            if (metric.div === "network") {
+              if (lastNetworkUnit !== null && metric.unit !== lastNetworkUnit) {
+                flashCrossing("network");
+              }
+              lastNetworkUnit = metric.unit;
+            }
           }
         }
         setupSliders();
+        initCrossingAnnotations();
         render();
         renderTcp();
     </script>
