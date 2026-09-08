@@ -434,17 +434,27 @@
           .style("opacity", 0)
           .remove();
 
-        boxes.enter().append("svg:rect")
+        // boxes.enter().append(...) below only extends the pre-existing
+        // "boxes" update selection; it does NOT include the exiting
+        // elements above. Transitioning boxes/entered separately (never
+        // a fresh svg.selectAll("rect")) matters: re-selecting *all*
+        // rects and starting a new transition on them would interrupt
+        // -- and so cancel -- the exit transition's queued .remove(),
+        // permanently orphaning those elements in the DOM.
+        var entered = boxes.enter().append("svg:rect")
           .attr("x", function(d) { return (d % cols) * length; })
           .attr("y", function(d) { return Math.floor(d / cols) * length; })
           .attr("height", length)
           .attr("width", 0)
           .style("opacity", 0);
 
-        svg.selectAll("rect")
-          .transition().duration(150)
+        boxes.transition().duration(150)
           .attr("x", function(d) { return (d % cols) * length; })
           .attr("y", function(d) { return Math.floor(d / cols) * length; })
+          .attr("width", widthFor)
+          .style("opacity", 1);
+
+        entered.transition().duration(150)
           .attr("width", widthFor)
           .style("opacity", 1);
     }
@@ -506,6 +516,13 @@
     function unitBucket(ns) {
         if (ns >= 1e6) return "ms";
         if (ns >= 1e3) return "10us";
+        // Sub-microsecond values still need a coarser box scale than
+        // "1 box = 1ns" (matching how "Main memory reference: 100ns"
+        // and friends already render), or a few hundred ns balloons
+        // into a wall of boxes -- so route the 100ns-999ns range
+        // through the same blue "100ns" bucket the rest of the page
+        // uses, and reserve plain "ns" for genuinely tiny values.
+        if (ns >= 100) return "100ns";
         return "ns";
     }
 
